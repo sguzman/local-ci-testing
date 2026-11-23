@@ -1,53 +1,46 @@
 # Local CI testing
 
-Tiny Rust program testing **one GitHub Actions workflow** in two places:
+Minimal Rust example demonstrating **one GitHub Actions workflow** with a pinned Nix environment, executed on GitHub or locally through wrkflw (no Docker).
 
-- **GitHub:** `.github/workflows/ci.yml` runs on a hosted runner and installs Nix.
-- **Locally:** `wrkflw` runs the **same workflow YAML** in host emulation mode, without Docker or Podman.
+- **Workflow source of truth:** `.github/workflows/ci.yml`
+- **Dependencies source of truth:** `flake.nix` and `flake.lock`
+- **Local runner:** `wrkflw`, provisioned by the default Nix development shell
+- **Results publisher:** `scripts/run-local-ci.fish`, using GitHub CLI (`gh`) from that same shell
 
-**Everything is provisioned through Nix.** The pinned `flake.lock` selects nixpkgs, which supplies the Rust toolchain, `wrkflw`, `fish`, and the GitHub CLI (`gh`). The flake offers two dev shells:
+## Run locally and publish results
 
-- `nix develop` (default): Rust CI tools, `wrkflw`, `fish`, and `gh` for local CI and status reporting.
-- `nix develop .#ci`: only the tools used in the GitHub workflow, including `fish` for syntax checking.
-
-## Local run and publish to GitHub (fish / Linux)
-
-Requires Nix with `nix-command` and `flakes` enabled, and Git. No separate installations of `wrkflw` or `gh` are needed.
-
-```fish
-git clone https://github.com/sguzman/local-ci-testing.git
-cd local-ci-testing
-nix develop --command gh auth login
-nix develop --command fish scripts/run-local-ci.fish
-```
-
-If already cloned and authenticated, use:
+After cloning the repository and authenticating `gh` once:
 
 ```fish
 git pull --ff-only
 nix develop --command fish scripts/run-local-ci.fish
 ```
 
-**The wrapper performs all of the following:**
+If not already authenticated:
 
-1. Refuses to publish a status if the working tree is dirty.
-2. Checks that `gh` is authenticated and that the current commit exists on GitHub.
-3. Validates `.github/workflows/ci.yml` using `wrkflw`.
-4. Runs that workflow using `wrkflw --runtime emulation` (no Docker).
-5. Publishes a `success` or `failure` commit status under **`local-ci/wrkflw-host`** using GitHub's REST API.
+```fish
+nix develop --command gh auth login
+```
 
-The status is attached to the exact commit tested and is visible with its other checks. It is **not** a hosted GitHub Actions run and cannot replace GitHub's native run history. Publishing uses GitHub's **Commit statuses: write** permission on the target repository. `gh auth login` is interactive and may need refreshed scopes depending on the credentials you already have.
+The runner refuses dirty working trees and verifies that HEAD is already on GitHub. It validates and runs the actual workflow in host-emulation mode. It records full output locally under `.git/local-ci/`, then publishes:
 
-The status description specifically says **host-emulation**: this is evidence of a local pass, **not** proof that every step executed exactly as on GitHub. `wrkflw` may skip unsupported actions. Inspect its output before treating a pass as equivalent to a hosted run.
+1. A Markdown **commit comment** with workflow, commit, timestamps, runtime, exit code, and the **last 120 lines** of redacted output.
+2. A commit status named `local-ci/wrkflw-host`, with the **Details** link pointing to that report.
 
-## Just run locally, without publishing
+The runner reports failures as failures (including a nonzero shell exit code) and reports the failure details automatically. Reports are attached to commits, **not added as commits**. Every run creates another report comment; there are no modifications to source code when CI runs.
+
+**Permissions:** Your existing `gh` authentication normally suffices. The token must have permission to write commit statuses and repository contents (for commit comments). You do **not** need to create a custom GitHub App.
+
+**Security:** Only a bounded diagnostic excerpt is published, not raw complete logs. Basic credential patterns and home usernames are filtered, but automated redaction can never guarantee secrecy. On a public repository, the comment is **public**. Avoid running secrets-bearing jobs through this reporting method. Full logs remain local. This is not equivalent to GitHub-hosted Actions job logs or native Checks API annotations.
+
+## Run without reporting
 
 ```fish
 nix develop --command wrkflw validate
 nix develop --command wrkflw run --runtime emulation .github/workflows/ci.yml
 ```
 
-To run the Nix-native checks directly:
+## Run Nix checks directly
 
 ```fish
 nix flake check --print-build-logs
@@ -56,10 +49,6 @@ nix build
 ./result/bin/local-ci-testing
 ```
 
-Expect: `Hello from local-ci-testing!`
+Expected output: `Hello from local-ci-testing!`
 
-## What this experiment proves
-
-The GitHub Actions workflow is the **source of truth for CI jobs**; the Nix flake is the **source of truth for dependencies**. The local publisher adds commit-status reporting without consuming GitHub-hosted Actions compute minutes. It does not turn the local run into a native GitHub Actions run.
-
-For safety, the publisher is a **manual opt-in command**, not an automatic push hook. Run host-emulated workflows only from trusted repositories: their steps can access your machine and user credentials.
+The runner is deliberately manual rather than a push hook. Host-emulated workflows execute code with your user's permissions; only run trusted workflow definitions.
