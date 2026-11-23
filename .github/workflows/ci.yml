@@ -41,3 +41,6 @@ jobs:
 
       - name: Nix package check
         run: nix flake check --print-build-logs
+
+      - name: Validate local status publisher syntax
+        run: nix develop .#ci --command fish --no-execute scripts/run-local-ci.fish

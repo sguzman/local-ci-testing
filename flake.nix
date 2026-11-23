@@ -13,6 +13,7 @@
         rustc
         rustfmt
         clippy
+        fish
       ];
     in
     {
@@ -20,14 +21,17 @@
         let
           pkgs = pkgsFor system;
         in {
-          # Only tools that the CI steps actually need.
+          # Tools used by the workflow, including fish syntax validation.
           ci = pkgs.mkShell {
             packages = rustTools pkgs;
           };
 
-          # Developer shell additionally provides the local CI runner.
+          # Developer shell includes the local CI runner and GitHub publisher.
           default = pkgs.mkShell {
-            packages = (rustTools pkgs) ++ [ pkgs.wrkflw ];
+            packages = (rustTools pkgs) ++ [
+              pkgs.wrkflw
+              pkgs.gh
+            ];
           };
         });
 
