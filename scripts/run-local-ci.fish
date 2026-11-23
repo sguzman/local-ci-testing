@@ -52,6 +52,7 @@ if test -z "$root"
     fail 'Run this inside a Git repository.'
 end
 cd "$root"; or exit 1
+source scripts/ci-report.fish; or fail "Could not load safe CI report policy."
 
 set -l dirty (git status --porcelain --untracked-files=normal)
 if test (count $dirty) -gt 0
@@ -89,7 +90,6 @@ set -l stamp (date -u +%Y%m%dT%H%M%SZ)
 set -l started (date -u +%Y-%m-%dT%H:%M:%SZ)
 set -l start_seconds (date +%s)
 set -l log "$log_dir/$sha-$stamp.log"
-set -l report "$log_dir/$sha-$stamp.report.md"
 set -l create_payload "$log_dir/$sha-$stamp.create.json"
 set -l update_payload "$log_dir/$sha-$stamp.update.json"
 
@@ -110,45 +110,32 @@ echo "Running $workflow locally for $repo @ $sha"
 echo "GitHub Check Run: $check_name (#$check_id)"
 echo "Full local log: $log"
 
-wrkflw validate "$workflow" 2>&1 | tee "$log"
-set -l ci_exit $pipestatus[1]
+# Capture diagnostics exclusively in the local Git directory.
+# Do not echo arbitrary step output or any log excerpts to GitHub or terminal.
+set -l phase validation
+wrkflw validate "$workflow" > "$log" 2>&1
+set -l ci_exit $status
 if test $ci_exit -eq 0
-    wrkflw run --runtime emulation "$workflow" 2>&1 | tee -a "$log"
-    set ci_exit $pipestatus[1]
+    set phase execution
+    wrkflw run --runtime emulation "$workflow" >> "$log" 2>&1
+    set ci_exit $status
 end
 
 set -l conclusion failure
-set -l label FAILED
 if test $ci_exit -eq 0
     set conclusion success
-    set label PASSED
 end
 set -l finished (date -u +%Y-%m-%dT%H:%M:%SZ)
 set -l duration (math (date +%s) - $start_seconds)
 
-# Security default: never publish raw or filtered command output.
-# CI steps can print arbitrary credential values, even without verbose mode.
-# The complete transcript remains in the local Git metadata directory.
-printf '### Local CI: %s\n\n' "$label" > "$report"
-printf '%s\n' \
-    "- Repository: $repo" \
-    "- Commit: $sha" \
-    "- Workflow: $workflow" \
-    '- Runtime: wrkflw host emulation (no containers)' \
-    "- Started (UTC): $started" \
-    "- Finished (UTC): $finished" \
-    "- Duration: $duration seconds" \
-    "- Exit code: $ci_exit" \
-    '' \
-    '**Build output intentionally not uploaded.**' \
-    'Workflow logs may contain environment variables, absolute paths, tokens, or other sensitive data.' \
-    'Full logs remain only on the local machine under .git/local-ci/.' \
-    'Inspect the local log to diagnose failures.' > "$report"
-
-set -l summary "Local workflow $label; exit $ci_exit; $duration seconds; SHA $sha. Full logs retained locally."
+# Pure allowlisted report: never send raw, filtered, or truncated build output.
+set -l public_output (ci_public_output "$ci_exit" "$phase" "$duration" "$log")
+if test -z "$public_output"
+    fail 'Could not construct the privacy-safe GitHub report.'
+end
 jq -n --arg conclusion "$conclusion" --arg completed "$finished" \
-    --arg title "Local CI $label" --arg summary "$summary" --rawfile text "$report" \
-    '{status:"completed",conclusion:$conclusion,completed_at:$completed,output:{title:$title,summary:$summary,text:$text}}' > "$update_payload"
+    --argjson output "$public_output" \
+    '{status:"completed",conclusion:$conclusion,completed_at:$completed,output:$output}' > "$update_payload"
 
 # A job may run longer than the 1-hour installation-token lifetime.
 set -l final_token (new_installation_token "$app_id" "$app_key_file" "$repo")
@@ -167,5 +154,6 @@ if test $publish_exit -ne 0 -o -z "$check_url"
     exit 1
 end
 printf 'Published GitHub Check: %s (%s)\n' "$check_name" "$conclusion"
+printf '%s\n' "$public_output" | jq -r '.summary'
 printf 'Check details: %s\n' "$check_url"
 exit $ci_exit

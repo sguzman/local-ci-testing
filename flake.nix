@@ -23,7 +23,7 @@
         in {
           # Tools used by the workflow, including fish syntax validation.
           ci = pkgs.mkShell {
-            packages = rustTools pkgs;
+            packages = (rustTools pkgs) ++ [ pkgs.jq ];
           };
 
           # Developer shell includes the local CI runner and GitHub publisher.

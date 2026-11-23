@@ -36,7 +36,13 @@ nix develop --command fish scripts/run-local-ci.fish
 
 GitHub CLI (`gh`) must already be authenticated for checkout lookup; if not, run `nix develop --command gh auth login` once. This OAuth login is separate from the GitHub App, whose key is only used to authenticate to the Checks API.
 
-The runner creates an **in progress** Check Run, executes the workflow locally, retains the full terminal log under `.git/local-ci/`, then publishes only the outcome, duration, exit code, commit, and workflow identity. **It never uploads raw log lines or environment variables.** For a failure, inspect the local log. The check is not a GitHub-hosted Actions recording.
+The runner creates an **in progress** Check Run and executes the workflow locally.
+
+- **Success:** GitHub receives only a pass result and duration. No full step list or build output.
+- **Failure:** GitHub receives exit code, duration, and the failing step *only if it matches a fixed allowlist of known workflow step names*. Otherwise it reports the failed phase (validation/execution). This is intentionally conservative.
+- **Privacy:** GitHub never receives raw log lines, environment variables, error messages, or excerpts. Complete diagnostics remain under `.git/local-ci/` on this machine. Terminal output is similarly minimal; inspect the local log when troubleshooting.
+
+The output construction policy lives in `scripts/ci-report.fish` and has fixture-based privacy regression tests in `scripts/test-ci-report.fish`. The check is not a GitHub-hosted Actions transcript.
 
 **One-time public-report cleanup:** If you ran the old verbose publisher before this change, its public Check Run may already include environment metadata. From this repository run:
 

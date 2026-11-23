@@ -47,3 +47,9 @@ jobs:
 
       - name: Validate privacy cleanup script syntax
         run: nix develop .#ci --command fish --no-execute scripts/redact-previous-check.fish
+
+      - name: Test CI reporting privacy
+        run: |
+          nix develop .#ci --command fish --no-execute scripts/ci-report.fish
+          nix develop .#ci --command fish --no-execute scripts/test-ci-report.fish
+          nix develop .#ci --command fish scripts/test-ci-report.fish
