@@ -44,3 +44,6 @@ jobs:
 
       - name: Validate local status publisher syntax
         run: nix develop .#ci --command fish --no-execute scripts/run-local-ci.fish
+
+      - name: Validate privacy cleanup script syntax
+        run: nix develop .#ci --command fish --no-execute scripts/redact-previous-check.fish
