@@ -31,6 +31,10 @@
             packages = (rustTools pkgs) ++ [
               pkgs.wrkflw
               pkgs.gh
+              pkgs.jq
+              pkgs.openssl
+              pkgs.coreutils
+              pkgs.gnused
             ];
           };
         });
