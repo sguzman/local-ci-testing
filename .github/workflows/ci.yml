@@ -16,27 +16,27 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
-      # On GitHub the runner doesn't have Nix; wrkflw emulation sets
-      # runner.environment to "local", so it does not reinstall Nix.
+      # Hosted GitHub runners install Nix; wrkflw on your host reuses yours.
       - name: Install Nix on GitHub-hosted runner
         if: ${{ runner.environment == 'github-hosted' }}
         uses: cachix/install-nix-action@v31
 
+      # Use the lean CI shell; wrkflw itself is only needed locally.
       - name: Show pinned toolchain
-        run: nix develop --command rustc --version
+        run: nix develop .#ci --command rustc --version
 
       - name: Rustfmt
-        run: nix develop --command cargo fmt --all -- --check
+        run: nix develop .#ci --command cargo fmt --all -- --check
 
       - name: Clippy
-        run: nix develop --command cargo clippy --all-targets -- -D warnings
+        run: nix develop .#ci --command cargo clippy --all-targets -- -D warnings
 
       - name: Tests
-        run: nix develop --command cargo test --all-targets --locked
+        run: nix develop .#ci --command cargo test --all-targets --locked
 
       - name: Smoke test
         run: |
-          output="$(nix develop --command cargo run --quiet --locked)"
+          output="$(nix develop .#ci --command cargo run --quiet --locked)"
           test "$output" = "Hello from local-ci-testing!"
 
       - name: Nix package check
