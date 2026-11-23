@@ -18,7 +18,8 @@ end
 cd "$root"; or exit 1
 
 # A GitHub status refers to a commit, not uncommitted working-tree changes.
-if test -n "$(git status --porcelain --untracked-files=normal)"
+set -l dirty (git status --porcelain --untracked-files=normal)
+if test (count $dirty) -gt 0
     fail 'Working tree is dirty. Commit or discard changes before publishing a status.'
 end
 
@@ -46,12 +47,11 @@ if test $ci_exit -eq 0
     set ci_exit $status
 end
 
+set -l state failure
+set -l detail "Local wrkflw host-emulation workflow failed (exit $ci_exit)"
 if test $ci_exit -eq 0
-    set -l state success
-    set -l detail 'Local wrkflw host-emulation workflow passed'
-else
-    set -l state failure
-    set -l detail "Local wrkflw host-emulation workflow failed (exit $ci_exit)"
+    set state success
+    set detail 'Local wrkflw host-emulation workflow passed'
 end
 
 # Only report the result of the actual run. Do not claim a native Actions
