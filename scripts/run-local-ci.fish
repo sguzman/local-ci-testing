@@ -89,7 +89,6 @@ set -l stamp (date -u +%Y%m%dT%H%M%SZ)
 set -l started (date -u +%Y-%m-%dT%H:%M:%SZ)
 set -l start_seconds (date +%s)
 set -l log "$log_dir/$sha-$stamp.log"
-set -l excerpt "$log_dir/$sha-$stamp.excerpt.txt"
 set -l report "$log_dir/$sha-$stamp.report.md"
 set -l create_payload "$log_dir/$sha-$stamp.create.json"
 set -l update_payload "$log_dir/$sha-$stamp.update.json"
@@ -114,7 +113,7 @@ echo "Full local log: $log"
 wrkflw validate "$workflow" 2>&1 | tee "$log"
 set -l ci_exit $pipestatus[1]
 if test $ci_exit -eq 0
-    wrkflw --verbose run --runtime emulation "$workflow" 2>&1 | tee -a "$log"
+    wrkflw run --runtime emulation "$workflow" 2>&1 | tee -a "$log"
     set ci_exit $pipestatus[1]
 end
 
@@ -127,17 +126,9 @@ end
 set -l finished (date -u +%Y-%m-%dT%H:%M:%SZ)
 set -l duration (math (date +%s) - $start_seconds)
 
-# Publish bounded best-effort-redacted diagnostics, not the raw transcript.
-# Do not run this on secret-bearing workflows without reviewing this policy.
-tail -n 120 "$log" | sed -E \
-    -e '/-----BEGIN [A-Z ]*PRIVATE KEY-----/,/-----END [A-Z ]*PRIVATE KEY-----/c\[private key omitted]' \
-    -e 's/(gh[pousr]_[A-Za-z0-9_]{16,}|github_pat_[A-Za-z0-9_]{16,}|AKIA[A-Z0-9]{16})/[REDACTED_TOKEN]/g' \
-    -e 's/(Bearer[[:space:]]+)[A-Za-z0-9._-]+/\1[REDACTED]/Ig' \
-    -e 's#(https?://)[^:/[:space:]]+:[^@[:space:]]+@#\1[REDACTED]@#g' \
-    -e 's#(/home/)[^/[:space:]]+#\1[user]#g' \
-    -e 's/((TOKEN|PASSWORD|SECRET|API_KEY|PRIVATE_KEY)[[:space:]]*[:=][[:space:]]*)[^[:space:]]+/\1[REDACTED]/Ig' \
-    -e 's/~~~/~ ~ ~/g' | head -c 28000 > "$excerpt"
-
+# Security default: never publish raw or filtered command output.
+# CI steps can print arbitrary credential values, even without verbose mode.
+# The complete transcript remains in the local Git metadata directory.
 printf '### Local CI: %s\n\n' "$label" > "$report"
 printf '%s\n' \
     "- Repository: $repo" \
@@ -149,14 +140,10 @@ printf '%s\n' \
     "- Duration: $duration seconds" \
     "- Exit code: $ci_exit" \
     '' \
-    'Local CI diagnostics, not a native hosted Actions transcript.' \
-    'The complete log remains in .git/local-ci/ on this computer.' \
-    '' \
-    '#### Diagnostic excerpt (last 120 lines, best-effort redacted)' \
-    '' \
-    '~~~text' >> "$report"
-cat "$excerpt" >> "$report"
-printf '\n~~~\n' >> "$report"
+    '**Build output intentionally not uploaded.**' \
+    'Workflow logs may contain environment variables, absolute paths, tokens, or other sensitive data.' \
+    'Full logs remain only on the local machine under .git/local-ci/.' \
+    'Inspect the local log to diagnose failures.' > "$report"
 
 set -l summary "Local workflow $label; exit $ci_exit; $duration seconds; SHA $sha. Full logs retained locally."
 jq -n --arg conclusion "$conclusion" --arg completed "$finished" \
